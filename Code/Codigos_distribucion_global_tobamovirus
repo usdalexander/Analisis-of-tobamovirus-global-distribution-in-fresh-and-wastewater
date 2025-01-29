@@ -1,0 +1,204 @@
+### Descargar secuencias del NCBI SRR 
+
+# Verificar modulos
+module avail
+# Seleccionar: 
+module load python/3.10.9-anaconda3
+# Crear ambiente y activarlo
+conda create -n SRA
+conda activate SRA
+# NO ACTIVA EL AMBIENTE HAY QUE PROBAR CON:
+source activate SRR
+#crear carpeta raw_reads
+mocerse a esa carpeta y ahi ejecutar todo
+/home/alexanderlopez/raw_reads
+# Installing SRA Toolkit en ubuntu (https://github.com/ncbi/sra-tools/wiki/02.-Installing-SRA-Toolkit
+wget --output-document sratoolkit.tar.gz https://ftp-trace.ncbi.nlm.nih.gov/sra/sdk/current/sratoolkit.current-ubuntu64.tar.gz
+# Extract the contents of the tar file:
+tar -vxzf sratoolkit.tar.gz
+# For convenience (and to show you where the binaries are) append the path to the binaries to your PATH environment variable:
+# En la siguiete direccion: /home/alexanderlopez/raw_reads
+export PATH=$PATH:$PWD/sratoolkit.3.0.6-ubuntu64/bin
+# Verify that the binaries will be found by the shell
+which fastq-dump
+# This should produce output similar to:
+/home/alex/sratoolkit.3.0.6-ubuntu64/bin/fastq-dump
+#Descargar las secuencias una por una...
+fasterq-dump --split-files SRR5868316
+#Descargar de la misma manera los demas archivos
+
+## FastQC 
+
+# crear carpeta fastqc
+mkdir Fastqc
+# moverse a la carpeta
+cd Fastqc
+# Crear ambiente fastqc
+conda create -n fastqc
+# cargar ambiente
+conda activate fastqc
+#Descargar programas para limpieza
+conda install -c bioconda fastqc 
+conda install -c bioconda cutadapt
+conda install -c conda-forge -c bioconda multiqc
+# Realizar comando fastqc para un primer lote de secuencias. #Estar posicionado fuera de todos los directorios
+fastqc -o /home/alexanderlopez/Fastqc raw_reads/**********_1.fastq
+fastqc -o /home/alexanderlopez/Fastqc raw_reads/**********_2.fastq
+fastqc -o /home/alexanderlopez/Fastqc raw_reads/ER3025******.fastq
+# Moverse al directorio Fastqc
+cd Fastqc
+# Ahi ejecutar el comando de multiqc
+multiqc .
+# Copiar el archivo multiqc html y visualizarlo en la PC.
+
+## Trimommatic 
+
+Crear ambiente para trimommatic
+conda create -n trimommatic
+conda activate trimommatic
+# activar trimommatic
+conda install -c bioconda trimmomatic
+# Primero copiar las secuencias PE de nextera al servidor en la carpeta clean_reads a partir del home/alex/NexteraPE-PE.fa
+scp -r /home/alex/NexteraPE-PE.fa alexanderlopez@10.5.7.10:/home/alexanderlopez/clean_reads 
+# Ejecutar el trimommatic a las secuencias end paired
+trimmomatic PE /home/alexanderlopez/raw_reads/ERR2596695_1.fastq /home/alexanderlopez/raw_reads/ERR2596695_2.fastq /home/alexanderlopez/clean_reads/ERR2596695_1paired.fastq /home/alexanderlopez/clean_reads/ERR2596695_1unpaired.fastq /home/alexanderlopez/clean_reads/ERR2596695_2paired.fastq /home/alexanderlopez/clean_reads/ERR2596695_2unpaired.fastq ILLUMINACLIP:NexteraPE-PE.fa:2:30:10:2:keepBothReads CROP:148 HEADCROP:6 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:20 MINLEN:36 
+# Secuencia single paired
+trimmomatic PE /home/alexanderlopez/raw_reads/ERR2596695_1.fastq /home/alexanderlopez/clean_reads/ERR2596695_1.fastq ILLUMINACLIP:NexteraPE-PE.fa:2:30:10:2:keepBothReads CROP:6 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:20 MINLEN:36 HEADCROP:11
+
+## Eliminar duplicados de PCR
+
+#crear ambiente
+conda create -n CD-HIT
+#activarlo
+conda ativate CD-HIT
+#descargar el programa (https://anaconda.org/bioconda/cd-hit-auxtools)
+conda install -c bioconda cd-hit-auxtools
+conda install -c "bioconda/label/cf201901" cd-hit-auxtools
+#verificar
+cd-hit
+.... programa unstalado
+#CD-HIT-DUP (http://home.cc.umanitoba.ca/~psgendb/doc/cd-hit/cdhit-user-guide.pdf)
+cd-hit-dup -i R1.fq -i2 R2.fq -o output-R1.fq -o2 output-R2.fq [other options] (for PE reads FASTQ)
+cd-hit-dup -i input.fa -o output.fa [other options] (for single reads FASTQ)
+#Ejecuarlo con una primera muestra solo F
+cd-hit-dup -i clean_reads/ERR2596695_1paired.fastq -o trimmed/ERR2596695_1paired.fastq
+# Probar para una muestra pair end
+cd-hit-dup -i clean_reads/ERR2596695_1paired.fastq -i2 clean_reads/ERR2596695_2paired.fastq -o trimmed/ERR2596695_F.fastq -o2 trimmed/ERR2596695_R.fastq
+
+## FASTQC para verificar la calidad
+
+fastqc -o /home/alexanderlopez/ejemplo trimmed/file.fastq
+
+## Asignacion con Diamond-MEGAN6
+
+# Crear ambiente 
+conda create -n Megan6
+# Activar ambiente
+conda activate Megan6
+# Activar paquetes
+conda install -c bioconda megan
+conda install -c bioconda diamond
+## Descargar la base de datos de nrNCBI
+wget https://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nr.gz
+# El resultado de este comando es la base de datos con peso aproximado de 142G denotado como nr.gz
+# indexar la base de referencia
+diamond makedb --in /home/201903075n/Virome/sequences_clean/nr.gz --db /home/201903075n/Virome/sequences_clean/nr
+# El resultado de este comando es un archivo de 226G aproximadamente denotado como nr.dmnd
+# Realizar el primer alineamiento
+# Antes crear una carpeta donde van a estar las secuecias asignadas
+mkdir asigned 
+# Ejecutar comando 
+diamond blastx -d /home/alexanderlopez/virus_analysis/nr -q /home/alexanderlopez/trimmed/ERR2596695_F.fastq -o /home/alexanderlopez/asigned/ERR2596695.daa -f 100
+# Las asignaciones restantes se realizaron mediante screen  en jupyter
+# Ejecutar comando
+jupyter nbconvert --to notebook --execute diamond2_assing.ipynb --output=diamond2results.ipynb --ExecutePreprocessor.timeout=-1
+
+## Meganizar archivos
+
+diamond blastx -d /home/alexanderlopez/virus_analysis/nr -q /home/alexanderlopez/trimmed/SRR6837562_1paired.fastq -o /home/alexanderlopez/asigned/SRR6837562.daa -f 100
+daa-meganizer -i /home/alexanderlopez/asigned/ERR2596695.daa -mdb /home/alexanderlopez/megan-map-Jan2021.db
+# Para acelerar las asignaciones se cambiaron los parametros de daa-meganizer de 8000 a 100000 en el servidor local de labtaa: Cachesize 100 000
+# en el archivo:megan.vmoptions que se encuentra en la carpeta Megan con la siguiente ruta en el servidor:
+~/.conda/envs/Megan6/opt/megan-6.24.20/MEGAN.vmoptions
+tambien: /home/alexanderlopez/.conda/envs/Megan6/opt/megan-6.24.20/MEGAN.vmoptions
+# En este archivo editar: -Xmx8000M por -Xmx100000M
+nano /home/201903075n/.conda/envs/Megan6/opt/megan-6.21.7/MEGAN.vmoptions
+# Esto hace mas eficiente la meganizacion
+# Una vez realizado este ajuste correr el comando PARA LAS DEMAS MUESTRAS DE LA SIGUIENTE MANERA:
+# Con este comando meganizabamos y cambiabamos los LCA parameter de una vez para no hacer nada en la interfaz grafica.
+time .conda/envs/Megan6/bin/daa-meganizer -i ~/asigned/SRR6284157.daa -mdb megan-map-2022.db -t 60 -v
+
+## Asignacion con kraken2 
+
+Base de datos tomada de: https://benlangmead.github.io/aws-indexes/k2
+Protocolo tomado LU, 2022: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9725748/
+https://github.com/DerrickWood/kraken2/wiki/Manual#system-requirements
+base de datos estandar
+crear la base de datos de kraken2 
+./kraken2-build --standard --db /home/alexanderlopez/db20231212
+# Se creo en la carpeta kraken2/scripts
+# Para ejecutar kraken2 dentro de la carpeta /kraken2/scripts
+./kraken2 --threads 40 --db /home/alexanderlopez/db20231212 /home/alexanderlopez/sequencescleaned/SRR5868316_1paired.fastq.gz --report /home/alexanderlopez
+#Empleamos screen con Jupyter para acelerar el tiempo de asignación
+jupyter nbconvert --to notebook --execute kraken.ipynb --output=krakenresults.ipynb --ExecutePreprocessor.timeout=-1
+
+## ENSAMBLE CON MEGAHIT
+
+# Crear ambiente y activarlo
+conda create -n bioconda megahit
+conda activate megahit
+# crear carpeta Megahit
+# Ejecutar el comando en la raiz de la terminal
+#Secuencias Single-end
+megahit -r ~/sequences_cleaned/ERR3026533_F.fastq.gz -t 40 -o ~/Megahit/ERR3026533_results
+#Secuencias Paired-end
+megahit -1 ~/clean_reads/SRR5868316_1paired.fastq -2 ~/clean_reads/SRR5868316_2paired.fastq -t 40 -o ~/Megahit/SRR5868316_results
+# El resto de las secuencias se realizó con screen y Jupyter 
+megahit -1 ~/clean_reads/ERR2596695_1paired.fastq -2 ~/clean_reads/ERR2596695_2paired.fastq -t 40 -o ~/Megahit/ERR2596695_results
+megahit -r ~/clean_reads/ERR3026534PAIRED.fastq -t 40 -o ~/Megahit/ERR3026534_results
+# PROBARLOS DIRECTAMENTE EN JUPYTER
+jupyter nbconvert --to notebook --execute megahit.ipynb --output=megahi2tresults.ipynb --ExecutePreprocessor.timeout=-1
+
+## filtro de ssRNA con Virsorter2 
+
+# Crear ambiente sv2
+conda create -n vs2 -c conda-forge -c bioconda
+# Decargar las carpetas
+git clone https://github.com/jiarong/VirSorter2.git
+moverte a la carpeta Virsorter anteriormente creada
+cd VirSorter2
+# Instalarlo
+conda activate vs2
+# Correr el comando virsorter para verificar su funcionamiento
+virsorter run -w ERR2596695_Virsorter.out -i ERR2596695.contigs.fa --include-groups RNA -j 4 all
+
+# Ejecutar todos con el archivos con screen en Jupyter
+jupyter nbconvert --to notebook --execute vir.ipynb --output=virsorter2tresults.ipynb --ExecutePreprocessor.timeout=-1
+
+## Anotación con prokka y predicción con prodigal
+
+# Crear ambiente prokka y activarlo
+conda create -n prokka
+conda activate prokka
+# Instalar prokka
+conda install -c conda-forge -c bioconda -c defaults prokka
+# Ejecular el primer analisis con la primer muestra
+perl scaffolds.pl final-viral-combinedERR3026533.fa ERR3026533 200 1
+perl proka.pl contigsERR3026533
+perl get.pl contigsERR3026533
+#Correr los demas arhivos con screen y Lupyter
+jupyter nbconvert --to notebook --execute prokka.ipynb --output=prokkaResults.ipynb --ExecutePreprocessor.timeout=-1
+
+## QUAST 
+
+# Descargar Quast con el comando
+conda install bioconda/label/cf201901::quast
+#Activar ambiente
+conda activate quast
+# verificar su instalacion
+quast -h
+# Ejecutar el primer comando para la primera muestra
+quast.py -o dir ~/contig.fa
+# Ejecutar comando para muestra
+quast.py -o quast_report_SRR5868316 ~/Assembly/SRR5868316.contigs.fa
+#Realizar los demas con screen en Jupyter
